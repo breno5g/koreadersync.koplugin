@@ -1,0 +1,1 @@
+# obsidiansync.koplugin
