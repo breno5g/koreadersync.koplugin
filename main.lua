@@ -56,7 +56,24 @@ function ObsidianSync:getFileNameAndExtension()
 	return info
 end
 
-function ObsidianSync:getSDRData() end
+function ObsidianSync:getSDRData()
+	if not self.ui.document then
+		self:info("❌ Open a document to proced")
+		return
+	end
+
+	local fileInfo = self:getFileNameAndExtension()
+	local chunk, err =
+		loadfile(fileInfo.dirname .. "/" .. fileInfo.filename .. ".sdr/metadata." .. fileInfo.extension .. ".lua")
+	if not chunk then
+		self:info("❌ Error to open sdr: " .. err)
+		return
+	end
+
+	local metadata = chunk()
+
+	return metadata
+end
 
 function ObsidianSync:configure(touchmenu_instance)
 	local MultiInputDialog = require("ui/widget/multiinputdialog")
@@ -153,6 +170,10 @@ function ObsidianSync:debug()
 	table.insert(info, "- Dirname: " .. fileInfo.dirname)
 	table.insert(info, "- Filename: " .. fileInfo.filename)
 	table.insert(info, "- Extension: " .. fileInfo.extension)
+
+	local metadata = self:getSDRData()
+
+	table.insert(info, "- Highlights count: " .. #metadata["annotations"])
 
 	self:info(table.concat(info, "\n"))
 end
