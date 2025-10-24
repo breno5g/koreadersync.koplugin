@@ -2,6 +2,7 @@ local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
+local DeviceInfo = require("device")
 
 local ObsidianSync = WidgetContainer:extend({
 	name = "obsidiansync",
@@ -10,12 +11,12 @@ local ObsidianSync = WidgetContainer:extend({
 	defaults = {
 		address = "127.0.0.1",
 		port = 9090,
-		password = "",
 	},
 })
 
 function ObsidianSync:init()
-	self.settings = G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	self.settings = G_reader_settings:readSetting("obsidiansync_settings", ObsidianSync.defaults)
+	self:getDeviceID()
 	self.ui.menu:registerToMainMenu(self)
 end
 
@@ -73,7 +74,7 @@ end
 
 function ObsidianSync:getSDRData()
 	if not self.ui.document then
-		self:showNotification("❌ Open a document to proced")
+		self:showNotification(_("❌ Please open a document to proceed"))
 		return
 	end
 
@@ -81,7 +82,7 @@ function ObsidianSync:getSDRData()
 	local chunk, err =
 		loadfile(fileInfo.dirname .. "/" .. fileInfo.filename .. ".sdr/metadata." .. fileInfo.extension .. ".lua")
 	if not chunk then
-		self:showNotification("❌ Error to open sdr: " .. err)
+		self:showNotification(_("❌ Error opening SDR file: ") .. err, 5)
 		return
 	end
 
@@ -95,11 +96,10 @@ function ObsidianSync:configure(touchmenu_instance)
 	local url_dialog
 
 	local current_settings = self.settings
-		or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+		or G_reader_settings:readSetting("obsidiansync_settings", ObsidianSync.defaults)
 
 	local obsidian_url_address = current_settings.address
 	local obsidian_url_port = current_settings.port
-	local obsidian_password = current_settings.password
 
 	url_dialog = MultiInputDialog:new({
 		title = _("Set custom obsidian address"),
@@ -113,11 +113,6 @@ function ObsidianSync:configure(touchmenu_instance)
 				text = tostring(obsidian_url_port),
 				input_type = "number",
 				hint = _("Port"),
-			},
-			{
-				text = obsidian_password,
-				input_type = "string",
-				hint = _("Password"),
 			},
 		},
 		buttons = {
@@ -139,14 +134,15 @@ function ObsidianSync:configure(touchmenu_instance)
 								port = ObsidianSync.defaults.port
 							end
 
+							-- Preserva o device_id existente ao salvar
 							local new_settings = {
 								address = fields[1],
 								port = port,
-								password = fields[3],
+								device_id = self.settings.device_id,
 							}
-							G_reader_settings:saveSetting("obsidian_sync_settings", new_settings)
+							G_reader_settings:saveSetting("obsidiansync_settings", new_settings)
 							self.settings = new_settings
-							self:showNotification("Settings saved!")
+							self:showNotification(_("✅ Settings saved!"))
 						end
 						UIManager:close(url_dialog)
 						if touchmenu_instance then
@@ -171,17 +167,23 @@ function ObsidianSync:sendToServer()
 
 	local body, err = json.encode(metadata)
 	if not body then
-		self:showNotification("❌ Erro ao codificar JSON: " .. (err or "unknown"), 5)
+		self:showNotification(_("❌ Error encoding JSON: ") .. (err or _("unknown")), 5)
 		return
 	end
 
-	local settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local device_id = self:getDeviceID()
+	if not device_id or device_id == "" then
+		self:showNotification(_("❌ Error: Could not get device ID."), 5)
+		return
+	end
+
+	local settings = self.settings or G_reader_settings:readSetting("obsidiansync_settings", ObsidianSync.defaults)
 	local url = "http://" .. settings.address .. ":" .. settings.port .. "/sync"
 
 	self:showNotification(_("Syncing with server..."), 2)
 
 	UIManager:scheduleIn(0.25, function()
-		self:_doSyncRequest(url, body, settings.password)
+		self:_doSyncRequest(url, body, device_id)
 	end)
 end
 
@@ -191,38 +193,43 @@ function ObsidianSync:debug()
 	table.insert(info, "====== DEBUG INFO ======")
 	table.insert(info, "")
 
+	local device_id = self:getDeviceID()
+	table.insert(info, "📱 Device Info:")
+	table.insert(info, "- ID: " .. (device_id or _("unknown")))
+	table.insert(info, "")
+
 	table.insert(info, "⚙️ Obsidian Settings:")
-	local settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local settings = self.settings or G_reader_settings:readSetting("obsidiansync_settings", ObsidianSync.defaults)
 
 	table.insert(info, "- IP: " .. settings.address)
 	table.insert(info, "- Port: " .. settings.port)
-	local pass_display = (settings.password ~= "" and "****** (hidden)" or "(not set)")
-	table.insert(info, "- Password: " .. pass_display)
 
 	table.insert(info, "")
 
 	if not self.ui.document then
-		table.insert(info, "❌ Open a document to proced")
+		table.insert(info, _("❌ Please open a document to proceed"))
 		self:info(table.concat(info, "\n"))
 		return
 	end
 
 	local fileInfo = self:getFileNameAndExtension()
-	table.insert(info, "✅ Document infos:")
+	table.insert(info, "✅ Document Info:")
 	table.insert(info, "- Dirname: " .. fileInfo.dirname)
 	table.insert(info, "- Filename: " .. fileInfo.filename)
 	table.insert(info, "- Extension: " .. fileInfo.extension)
 
 	local metadata = self:getSDRData()
 
-	if metadata then
+	if metadata and metadata.annotations then
 		table.insert(info, "- Highlights count: " .. #metadata["annotations"])
+	else
+		table.insert(info, _("- Highlights count: (Error getting sdr data)"))
 	end
 
 	self:info(table.concat(info, "\n"))
 end
 
-function ObsidianSync:_doSyncRequest(url, body, password)
+function ObsidianSync:_doSyncRequest(url, body, device_id)
 	local http = require("socket.http")
 	local ltn12 = require("ltn12")
 
@@ -231,7 +238,7 @@ function ObsidianSync:_doSyncRequest(url, body, password)
 	local headers = {
 		["Content-Type"] = "application/json",
 		["Content-Length"] = #body,
-		["Authorization"] = password,
+		["Authorization"] = device_id,
 	}
 
 	local ok, code, headers_resp, status = http.request({
@@ -243,7 +250,7 @@ function ObsidianSync:_doSyncRequest(url, body, password)
 	})
 
 	if not ok then
-		self:showNotification("❌ Erro de conexão: " .. (code or "timeout"), 5)
+		self:showNotification(_("❌ Connection error: ") .. (code or _("timeout")), 5)
 		return
 	end
 
@@ -252,10 +259,40 @@ function ObsidianSync:_doSyncRequest(url, body, password)
 	local is_success = code >= 200 and code < 300
 
 	if is_success then
-		self:showNotification("✅ Sync successful!")
+		self:showNotification(_("✅ Sync successful!"))
 	else
-		self:showNotification("❌ Erro do servidor (" .. code .. "): " .. final_message, 5)
+		self:showNotification(_("❌ Server error (") .. code .. "): " .. final_message, 5)
 	end
+end
+
+function ObsidianSync:getDeviceID()
+	local serial = DeviceInfo.serial_number
+
+	if serial and serial ~= "" then
+		return serial
+	end
+
+	if self.settings.device_id and self.settings.device_id ~= "" then
+		return self.settings.device_id
+	end
+
+	local new_id = self:_generateRandomID()
+
+	self.settings.device_id = new_id
+	G_reader_settings:saveSetting("obsidiansync_settings", self.settings)
+
+	return new_id
+end
+
+function ObsidianSync:_generateRandomID(length)
+	length = length or 16
+	local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local id = ""
+	for _ = 1, length do
+		local rand_idx = math.random(1, #chars)
+		id = id .. chars:sub(rand_idx, rand_idx)
+	end
+	return "gen-" .. id
 end
 
 return ObsidianSync
