@@ -20,17 +20,48 @@ function ObsidianSync:addToMainMenu(menu_items)
 			{
 				text = _("Export Hightlights"),
 				callback = function()
-					self:hello()
+					self:debug()
 				end,
 			},
 		},
 	}
 end
 
-function ObsidianSync:hello()
+function ObsidianSync:info(message)
 	UIManager:show(InfoMessage:new({
-		text = _("Hello, plugin world"),
+		text = _(message),
 	}))
+end
+
+function ObsidianSync:getFileNameAndExtension(path)
+	local info = {
+		dirname = path:match("(.+)/[^/]+$"),
+		filename = path:match("([^/]+)%."),
+		extension = path:match("%.([^%.]+)$"),
+	}
+
+	return info
+end
+
+function ObsidianSync:debug()
+	local info = {}
+
+	table.insert(info, "====== DEBUG INFO ======")
+	table.insert(info, "")
+
+	if not self.ui.document then
+		table.insert(info, "❌ Open a document to proced")
+		self:info(table.concat(info, "\n"))
+		return
+	end
+
+	local fileInfo = self:getFileNameAndExtension(self.ui.document.file)
+	table.insert(info, "✅ Document infos:")
+	table.insert(info, "- Dirname: " .. fileInfo.dirname)
+	table.insert(info, "- Filename: " .. fileInfo.filename)
+	table.insert(info, "- Extension: " .. fileInfo.extension)
+
+	self:info(table.concat(info, "\n"))
 end
 
 return ObsidianSync
