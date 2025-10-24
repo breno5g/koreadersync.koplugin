@@ -18,7 +18,7 @@ function ObsidianSync:addToMainMenu(menu_items)
 		sorting_hint = "tools",
 		sub_item_table = {
 			{
-				text = _("Export Hightlights"),
+				text = _("Debug info"),
 				callback = function()
 					self:debug()
 				end,
@@ -33,7 +33,8 @@ function ObsidianSync:info(message)
 	}))
 end
 
-function ObsidianSync:getFileNameAndExtension(path)
+function ObsidianSync:getFileNameAndExtension()
+	local path = self.ui.document.file
 	local info = {
 		dirname = path:match("(.+)/[^/]+$"),
 		filename = path:match("([^/]+)%."),
@@ -41,6 +42,24 @@ function ObsidianSync:getFileNameAndExtension(path)
 	}
 
 	return info
+end
+
+function ObsidianSync:getSDRData()
+	if not self.ui.document then
+		self:info("❌ Open a document to proced")
+		return
+	end
+
+	local fileInfo = self:getFileNameAndExtension()
+	local chunk, err =
+		loadfile(fileInfo.dirname .. "/" .. fileInfo.filename .. ".sdr/metadata." .. fileInfo.extension .. ".lua")
+	if not chunk then
+		self:info("❌ Error to open sdr: " .. err)
+		return
+	end
+
+	local metadata = chunk()
+	self:info(metadata["annotations"][1]["text"])
 end
 
 function ObsidianSync:debug()
@@ -55,7 +74,7 @@ function ObsidianSync:debug()
 		return
 	end
 
-	local fileInfo = self:getFileNameAndExtension(self.ui.document.file)
+	local fileInfo = self:getFileNameAndExtension()
 	table.insert(info, "✅ Document infos:")
 	table.insert(info, "- Dirname: " .. fileInfo.dirname)
 	table.insert(info, "- Filename: " .. fileInfo.filename)
