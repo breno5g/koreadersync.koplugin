@@ -20,13 +20,17 @@ function ObsidianSync:addToMainMenu(menu_items)
 			{
 				text = _("Export Hightlights"),
 				callback = function()
-					UIManager:show(InfoMessage:new({
-						text = _("Hello, plugin world"),
-					}))
+					self:hello()
 				end,
 			},
 		},
 	}
+end
+
+function ObsidianSync:hello()
+	UIManager:show(InfoMessage:new({
+		text = _("Hello, plugin world"),
+	}))
 end
 
 return ObsidianSync
