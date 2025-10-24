@@ -15,6 +15,7 @@ local ObsidianSync = WidgetContainer:extend({
 })
 
 function ObsidianSync:init()
+	self.settings = G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
 	self.ui.menu:registerToMainMenu(self)
 end
 
@@ -79,7 +80,7 @@ function ObsidianSync:configure(touchmenu_instance)
 	local MultiInputDialog = require("ui/widget/multiinputdialog")
 	local url_dialog
 
-	local current_settings = G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local current_settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
 
 	local obsidian_url_address = current_settings.address
 	local obsidian_url_port = current_settings.port
@@ -123,12 +124,14 @@ function ObsidianSync:configure(touchmenu_instance)
 								port = ObsidianSync.defaults.port
 							end
 
-							G_reader_settings:saveSetting("obsidian_sync_settings", {
-								address = fields[1],
-								port = port,
-								password = fields[3],
-							})
-							self:info("Settings saved!")
+ 						local new_settings = {
+ 							address = fields[1],
+ 							port = port,
+ 							password = fields[3],
+ 						}
+ 						G_reader_settings:saveSetting("obsidian_sync_settings", new_settings)
+ 						self.settings = new_settings
+ 						self:info("Settings saved!")
 						end
 						UIManager:close(url_dialog)
 						if touchmenu_instance then
@@ -150,7 +153,7 @@ function ObsidianSync:debug()
 	table.insert(info, "")
 
 	table.insert(info, "⚙️ Obsidian Settings:")
-	local settings = G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
 
 	table.insert(info, "- IP: " .. settings.address)
 	table.insert(info, "- Port: " .. settings.port)
