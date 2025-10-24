@@ -31,6 +31,12 @@ function ObsidianSync:addToMainMenu(menu_items)
 				end,
 			},
 			{
+				text = _("Sync now"),
+				callback = function()
+					self:sendToServer()
+				end,
+			},
+			{
 				text = _("Debug info"),
 				callback = function()
 					self:debug()
@@ -43,6 +49,14 @@ end
 function ObsidianSync:info(message)
 	UIManager:show(InfoMessage:new({
 		text = _(message),
+	}))
+end
+
+function ObsidianSync:showNotification(message, timeout)
+	local Notification = require("ui/widget/notification")
+	UIManager:show(Notification:new({
+		text = _(message),
+		timeout = timeout or 3,
 	}))
 end
 
@@ -59,7 +73,7 @@ end
 
 function ObsidianSync:getSDRData()
 	if not self.ui.document then
-		self:info("❌ Open a document to proced")
+		self:showNotification("❌ Open a document to proced")
 		return
 	end
 
@@ -67,7 +81,7 @@ function ObsidianSync:getSDRData()
 	local chunk, err =
 		loadfile(fileInfo.dirname .. "/" .. fileInfo.filename .. ".sdr/metadata." .. fileInfo.extension .. ".lua")
 	if not chunk then
-		self:info("❌ Error to open sdr: " .. err)
+		self:showNotification("❌ Error to open sdr: " .. err)
 		return
 	end
 
@@ -80,7 +94,8 @@ function ObsidianSync:configure(touchmenu_instance)
 	local MultiInputDialog = require("ui/widget/multiinputdialog")
 	local url_dialog
 
-	local current_settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local current_settings = self.settings
+		or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
 
 	local obsidian_url_address = current_settings.address
 	local obsidian_url_port = current_settings.port
@@ -124,14 +139,14 @@ function ObsidianSync:configure(touchmenu_instance)
 								port = ObsidianSync.defaults.port
 							end
 
- 						local new_settings = {
- 							address = fields[1],
- 							port = port,
- 							password = fields[3],
- 						}
- 						G_reader_settings:saveSetting("obsidian_sync_settings", new_settings)
- 						self.settings = new_settings
- 						self:info("Settings saved!")
+							local new_settings = {
+								address = fields[1],
+								port = port,
+								password = fields[3],
+							}
+							G_reader_settings:saveSetting("obsidian_sync_settings", new_settings)
+							self.settings = new_settings
+							self:showNotification("Settings saved!")
 						end
 						UIManager:close(url_dialog)
 						if touchmenu_instance then
@@ -144,6 +159,30 @@ function ObsidianSync:configure(touchmenu_instance)
 	})
 	UIManager:show(url_dialog)
 	url_dialog:onShowKeyboard()
+end
+
+function ObsidianSync:sendToServer()
+	local json = require("json")
+
+	local metadata = self:getSDRData()
+	if not metadata then
+		return
+	end
+
+	local body, err = json.encode(metadata)
+	if not body then
+		self:showNotification("❌ Erro ao codificar JSON: " .. (err or "unknown"), 5)
+		return
+	end
+
+	local settings = self.settings or G_reader_settings:readSetting("obsidian_sync_settings", ObsidianSync.defaults)
+	local url = "http://" .. settings.address .. ":" .. settings.port .. "/sync"
+
+	self:showNotification(_("Syncing with server..."), 2)
+
+	UIManager:scheduleIn(0.25, function()
+		self:_doSyncRequest(url, body, settings.password)
+	end)
 end
 
 function ObsidianSync:debug()
@@ -176,9 +215,47 @@ function ObsidianSync:debug()
 
 	local metadata = self:getSDRData()
 
-	table.insert(info, "- Highlights count: " .. #metadata["annotations"])
+	if metadata then
+		table.insert(info, "- Highlights count: " .. #metadata["annotations"])
+	end
 
 	self:info(table.concat(info, "\n"))
+end
+
+function ObsidianSync:_doSyncRequest(url, body, password)
+	local http = require("socket.http")
+	local ltn12 = require("ltn12")
+
+	http.TIMEOUT = 10
+	local resp_body_table = {}
+	local headers = {
+		["Content-Type"] = "application/json",
+		["Content-Length"] = #body,
+		["Authorization"] = password,
+	}
+
+	local ok, code, headers_resp, status = http.request({
+		url = url,
+		method = "POST",
+		headers = headers,
+		source = ltn12.source.string(body),
+		sink = ltn12.sink.table(resp_body_table),
+	})
+
+	if not ok then
+		self:showNotification("❌ Erro de conexão: " .. (code or "timeout"), 5)
+		return
+	end
+
+	local response_message = table.concat(resp_body_table)
+	local final_message = (response_message ~= "") and response_message or status
+	local is_success = code >= 200 and code < 300
+
+	if is_success then
+		self:showNotification("✅ Sync successful!")
+	else
+		self:showNotification("❌ Erro do servidor (" .. code .. "): " .. final_message, 5)
+	end
 end
 
 return ObsidianSync
