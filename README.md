@@ -1,4 +1,4 @@
-# ✨ Obsidian Sync for KOReader
+# ✨ KOReader Sync
 
 A plugin for [KOReader](https://koreader.rocks/) that exports your reading highlights and notes directly to a web server, allowing for easy integration with Obsidian or any other note-taking service.
 
